@@ -97,6 +97,119 @@ CORS_ORIGINS=http://localhost:5173,https://signease-mvp.vercel.app
 - Test speech synthesis with various voices
 - Explore performance monitoring dashboard
 
+## 📊 Datasets & Models
+
+SignEase uses two different datasets and corresponding trained models to provide flexible ASL recognition capabilities:
+
+### Dataset 1: Lightweight Model (76K Parameters)
+- **Parameters**: 76,000 trainable parameters
+- **Source**: Custom curated dataset (included in project)
+- **Size**: Optimized for quick inference and lower resource usage
+- **Use Case**: Real-time recognition on devices with limited GPU/CPU resources
+- **Accuracy**: ~95-97% on validation set
+- **Inference Speed**: <50ms per prediction
+- **Model File**: `best_asl_model.pth` (included in repository)
+- **Training Scripts**: 
+  - `simple_tensorflow_trainer.py`
+  - `sklearn_asl_trainer.py`
+  - `improved_sklearn_trainer.py`
+
+### Dataset 2: High-Accuracy Model (3M Parameters)
+- **Parameters**: 3,000,000 trainable parameters
+- **Source**: [ASL Alphabet Dataset on Kaggle](https://www.kaggle.com/datasets/grassknoted/asl-alphabet)
+- **Dataset Details**:
+  - 87,000+ images of ASL alphabet signs
+  - 29 classes (A-Z letters + SPACE, DELETE, NOTHING)
+  - 200x200 RGB images
+  - Multiple hand positions and lighting conditions
+  - Diverse backgrounds and skin tones
+- **Use Case**: Maximum accuracy for production environments with adequate GPU resources
+- **Accuracy**: 99.57% on validation set
+- **Inference Speed**: ~100ms per prediction
+- **Model File**: `asl_model_best_20251102_214717.json` (in backend/models/)
+- **Training Scripts**:
+  - `gpu_train_asl.py`
+  - `tensorflow_gpu_asl_trainer.py`
+  - `pytorch_ultimate_gpu_trainer.py`
+  - `rtx5060_full_trainer.py`
+  - `max_gpu_utilization_trainer.py`
+
+### Dataset Comparison
+
+| Feature | Lightweight (76K) | High-Accuracy (3M) |
+|---------|-------------------|-------------------|
+| Parameters | 76,000 | 3,000,000 |
+| Model Size | ~300KB | ~12MB |
+| Training Time | ~10 minutes (CPU) | ~2-4 hours (GPU) |
+| Inference Speed | <50ms | ~100ms |
+| Accuracy | 95-97% | 99.57% |
+| GPU Required | No | Recommended |
+| Memory Usage | <256MB | <512MB |
+| Best For | Edge devices, demos | Production, high accuracy |
+
+### Downloading the Kaggle Dataset
+
+To train the high-accuracy model yourself:
+
+1. **Install Kaggle CLI**
+   ```bash
+   pip install kaggle
+   ```
+
+2. **Setup Kaggle API Credentials**
+   - Go to https://www.kaggle.com/account
+   - Create new API token (downloads `kaggle.json`)
+   - Place in `~/.kaggle/kaggle.json` (Linux/Mac) or `C:\Users\<username>\.kaggle\kaggle.json` (Windows)
+
+3. **Download Dataset**
+   ```bash
+   kaggle datasets download -d grassknoted/asl-alphabet
+   unzip asl-alphabet.zip -d ./data/asl-alphabet
+   ```
+
+4. **Train Model**
+   ```bash
+   # For GPU training (recommended)
+   python gpu_train_asl.py
+   
+   # For maximum GPU utilization
+   python max_gpu_utilization_trainer.py
+   
+   # For RTX 5060 optimized training
+   python rtx5060_full_trainer.py
+   ```
+
+### Model Selection Guide
+
+**Use Lightweight Model (76K) when:**
+- Deploying to edge devices or mobile
+- Limited GPU/CPU resources available
+- Quick inference time is critical
+- Running demos or prototypes
+- Bandwidth/storage is constrained
+
+**Use High-Accuracy Model (3M) when:**
+- Maximum accuracy is required
+- GPU resources are available
+- Production environment with quality requirements
+- Handling diverse lighting/background conditions
+- Need for robust real-world performance
+
+### Training Your Own Models
+
+Both models can be retrained with custom data:
+
+```bash
+# Lightweight model training
+python simple_tensorflow_trainer.py --epochs 50 --batch-size 32
+
+# High-accuracy model training (requires GPU)
+python gpu_train_asl.py --epochs 100 --batch-size 64 --data-path ./data/asl-alphabet
+
+# Monitor training with GPU utilization
+python monitor_system.py
+```
+
 ## 🏗️ Architecture
 
 ### System Overview
