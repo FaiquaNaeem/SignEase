@@ -31,6 +31,7 @@ MANIFEST
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 env.bak/
@@ -43,6 +44,19 @@ models/experiments/
 models/checkpoints/
 models/training/
 *_checkpoint_*.pth
+backend/checkpoints/
+backend/data/
+backend/mediapipe_models/
+backend/tts_models/
+
+# Extension build output / deps
+extension/node_modules/
+extension/dist/
+extension/.turbo/
+extension/tsconfig.tsbuildinfo
+
+# Claude Code local state
+.claude/
 *_temp_*.pth
 *.tmp.pth
 *.tmp.pt
@@ -342,6 +356,12 @@ personal/
 #*#
 
 models/
+# The rule above (from the old repo) unintentionally also matched
+# backend/models/, which is real source code (letter/word classifier
+# architectures), not a model-output directory — re-include it.
+!backend/models/
+!backend/models/**
+backend/models/__pycache__/
 
 .kiro/settings/mcp.json
 .env
