@@ -43,13 +43,31 @@ export interface SignReferences {
   words: Record<string, SignReferenceSequence>;
 }
 
+export type HandTrackingMode = "letter" | "word";
+
 // Runtime messages passed between content script / background / offscreen doc.
 export type ExtensionMessage =
   | { type: "START_TAB_TRANSCRIPTION"; tabId: number }
   | { type: "STOP_TAB_TRANSCRIPTION" }
   | { type: "TAB_STREAM_ID"; streamId: string }
   | { type: "TRANSCRIPT_RESULT"; transcript: string; language_code?: string }
-  | { type: "TRANSCRIPTION_ERROR"; message: string };
+  | { type: "TRANSCRIPTION_ERROR"; message: string }
+  // Sign->speech hand tracking must run inside the offscreen document, not
+  // the content script: MediaPipe's WASM loader injects a <script> tag and
+  // reads back a global it sets, but a content script's DOM-injected script
+  // tags execute in the host page's MAIN world while the content script
+  // itself runs in the ISOLATED world — two separate JS global scopes that
+  // share a DOM but not variables, so the global never becomes visible to
+  // our code ("ModuleFactory not set", reproduced every time regardless of
+  // loader variant). An offscreen document is a normal single-world page,
+  // so the same technique just works there.
+  | { type: "START_HAND_TRACKING"; mode: HandTrackingMode; language: SignLanguage }
+  | { type: "STOP_HAND_TRACKING" }
+  | { type: "SET_HAND_TRACKING_MODE"; mode: HandTrackingMode }
+  | { type: "SET_WORD_CAPTURING"; capturing: boolean }
+  | { type: "HAND_TRACKING_CAPTION"; text: string; confidence: number }
+  | { type: "HAND_TRACKING_ERROR"; message: string }
+  | { type: "HAND_TRACKING_DEBUG"; entry: { label: string; ok: boolean; detail: string; durationMs: number } };
 
 // Content scripts run inside the host page's (e.g. meet.google.com) CSP,
 // which blocks fetch() to arbitrary hosts like our localhost backend

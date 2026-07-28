@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>SignEase Bridge — Camera Access</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 480px;
+        margin: 80px auto;
+        text-align: center;
+        color: #1a1a1a;
+      }
+      button {
+        font-size: 15px;
+        padding: 10px 20px;
+        margin-top: 16px;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 16px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>SignEase Bridge — Camera Access</h2>
+    <p>
+      This is a one-time grant so the extension can use your camera for sign
+      recognition during calls. You can close this tab once it says granted.
+    </p>
+    <button id="grant">Grant camera access</button>
+    <div id="status"></div>
+    <script type="module" src="./permission.ts"></script>
+  </body>
+</html>

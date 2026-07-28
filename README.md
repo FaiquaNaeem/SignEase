@@ -1,530 +1,182 @@
-# SignEase MVP 🤟 - AI-Powered Sign Language Bridge
+# SignEase Bridge 🤟
 
-**Real-time American Sign Language (ASL) Recognition System**
+**A browser extension for two-way sign language ↔ speech translation on video calls.**
 
-SignEase is a revolutionary web application that bridges communication gaps between deaf/hard-of-hearing individuals and the hearing community through real-time ASL gesture recognition with 99.57% accuracy, powered by custom-trained neural networks and GPU acceleration.
+SignEase Bridge lets a deaf/mute person and a hearing person understand each
+other on a live video call (Google Meet, Zoom Web, Teams Web), in both
+directions:
 
-![SignEase Demo](https://img.shields.io/badge/Demo-Live-brightgreen) ![Version](https://img.shields.io/badge/Version-1.0.0-blue) ![License](https://img.shields.io/badge/License-MIT-green) ![Accuracy](https://img.shields.io/badge/Accuracy-99.57%25-success) ![Tests](https://img.shields.io/badge/Tests-79%20Passing-brightgreen)
+1. **Sign → Speech**: the deaf/mute person signs into their webcam. An
+   on-device hand-tracking pipeline recognizes ASL letters or short words and
+   the extension speaks the result out loud (and shows it as a caption).
+2. **Speech → Sign**: the hearing person's voice from the call is
+   transcribed and matched against a library of recorded sign sequences,
+   replayed to the deaf/mute person as an animated hand skeleton.
 
-## 🌟 Features
+This is a ground-up rebuild of an earlier hackathon project — the original
+(a standalone React web app with a TensorFlow model and fabricated benchmark
+numbers) has been replaced with real trained PyTorch models, a single clean
+FastAPI backend, and a Manifest V3 browser extension as the actual delivery
+target.
 
-### Core Functionality
-- **Real-time ASL Recognition**: 99.57% accuracy with custom-trained ML model
-- **Immersive AR Overlay**: Text appears directly over hand gestures
-- **Text-to-Speech**: Natural voice synthesis with customizable settings
-- **Sentence Building**: Intelligent word completion and sentence construction
-- **Multi-language Support**: English, Spanish, French interface options
+## Honest numbers
 
-### Advanced Features
-- **Performance Optimization**: GPU acceleration, request batching, ML inference optimization
-- **Professional UI/UX**: Dark/light themes, responsive design, accessibility features
-- **Comprehensive Testing**: 79 automated tests covering E2E, performance, and accuracy
-- **Demo Environment**: Professional presentation tools with environment validation
-- **Enterprise Monitoring**: Real-time performance metrics and optimization suggestions
+No number below is hardcoded or invented — both are the model's accuracy on
+a held-out test split it never saw during training (`backend/checkpoints/*_report.json`).
 
-## 🚀 Quick Start
+| Model | Classes | Train / Val / Test samples | Test accuracy |
+|---|---|---|---|
+| Letter classifier (ResMLP) | 28 (A–Z, minus "nothing") | 11,851 / 2,540 / 2,540 | **98.66%** |
+| Word classifier (Conv1D + Transformer) | 45 curated words | 9,450 / 2,025 / 2,025 | **80.94%** |
 
-### Prerequisites
-- Node.js 18+ and npm
-- Python 3.9+ with pip
-- Modern web browser with camera access
-- GPU recommended for optimal performance
+**Known limitation:** the word model was trained on hand *and* upper-body
+pose landmarks (MediaPipe Holistic), but the extension currently only
+captures hands (MediaPipe HandLandmarker) — there's no pose tracking in the
+browser yet. Feeding zeroed-out pose data at inference costs real accuracy on
+pose-dependent signs. Measured offline: forcing pose to all-zero drops word
+accuracy from 80.94% to ~52%. This is a documented gap, not a silent bug —
+closing it means adding MediaPipe's PoseLandmarker to the client capture
+pipeline, tracked as a follow-up.
 
-### Installation
+Recognized word vocabulary (45 words, not general ASL — sourced from a
+baby/family sign-language subset of the Kaggle `asl-signs` dataset):
+`hello, bye, please, thankyou, yes, no, water, drink, food, hungry, thirsty,
+sick, happy, sad, hot, sleepy, open, close, wait, go, look, listen, home,
+potty, tomorrow, later, now, time, where, why, who, finish, clean, dirty,
+quiet, loud, fine, bad, mom, dad, sleep, shower, milk, up, down`.
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-org/signease-mvp.git
-   cd signease-mvp
-   ```
+## Architecture
 
-2. **Setup Frontend**
-   ```bash
-   cd signease-frontend
-   npm install
-   npm run dev
-   ```
+```
+backend/                       FastAPI service — the only backend, replaces every
+                                duplicate Flask server from the old repo.
+  training/
+    common.py                  Landmark normalization/feature engineering shared
+                                by both pipelines.
+    prepare_letters.py         Kaggle asl-alphabet -> per-frame landmark features.
+    prepare_words.py           Kaggle asl-signs -> landmark sequences (45 curated
+                                words), bulk download from the extracted archive.
+    train_letters.py           ResMLP training, reports real val/test accuracy.
+    train_words.py             Conv1D + TransformerEncoder + masked attention
+                                pooling, same honest-accuracy reporting.
+    export_sign_references.py  Picks one representative landmark sample/sequence
+                                per class (nearest-to-centroid) for the
+                                speech->sign skeleton replay — generated from
+                                training data, no licensed video/assets.
+  models/
+    letter_classifier.py       ResMLP architecture.
+    word_classifier.py         Conv1D+Transformer architecture.
+  inference/engine.py          Loads both checkpoints once, serves predictions.
+  services/
+    tts.py                     Sarvam TTS (bulbul:v2) primary, local Piper
+                                fallback.
+    stt.py                     Sarvam ASR (saaras:v3) primary, local
+                                faster-whisper fallback.
+  api/routes.py                /api/predict/letter, /api/predict/word,
+                                /api/speak, /api/transcribe, /api/sign-references,
+                                /api/health.
+  app.py                       FastAPI app + CORS (localhost dev origins +
+                                chrome-extension://* via regex).
 
-3. **Setup Backend**
-   ```bash
-   cd ../backend
-   pip install -r requirements.txt
-   python app.py
-   ```
+extension/                     Manifest V3 browser extension — the primary product.
+  src/background/
+    service-worker.ts          Routes messages between content script, offscreen
+                                document, and the backend (backend calls run here
+                                and in the offscreen doc, both outside the host
+                                page's CSP).
+  src/offscreen/
+    offscreen.ts                Owns the persistent offscreen document (survives
+                                service-worker suspension); lazy-imports handTracking
+                                to dodge a message-listener registration race.
+    handTracking.ts             Camera capture + MediaPipe hand tracking + prediction
+                                loop. Runs on a setInterval, not requestAnimationFrame
+                                — offscreen documents are never painted, so rAF is
+                                throttled/stalled there.
+  src/lib/mediapipeHands.ts     HandLandmarker wrapper (MediaPipe Tasks API, CPU
+                                delegate). Uses MediaPipe's raw Left/Right handedness
+                                labels directly — matching how the training data
+                                was labeled.
+  src/content-scripts/          Injected into the call page: overlay panel (mode
+                                toggles, captions, debug log), speech-to-sign relay.
+  src/permission/               Dedicated persistent tab for granting camera
+                                permission (offscreen documents can't prompt for it,
+                                and the popup auto-closes on blur mid-prompt).
+  src/popup/                    Settings (backend URL).
 
-4. **Access the Application**
-   - Frontend: http://localhost:5173
-   - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
+camera-test/                   Standalone test harness — plain HTML/JS page, no
+                                extension involved. Used to isolate and verify the
+                                camera + MediaPipe + prediction pipeline independent
+                                of any Chrome-extension-specific bugs. The MediaPipe
+                                wasm/model binaries it loads aren't tracked in git
+                                (they're just copies of extension/ assets) — copy
+                                them in before running:
+                                `cp -r extension/dist/mediapipe-wasm extension/dist/hand_landmarker.task extension/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs camera-test/`
+                                then `python3 -m http.server 5500` from this directory.
 
-### Environment Variables
+signease-frontend/             Kept as a secondary, installable-extension-free
+                                practice-mode site (not the primary product anymore).
+```
 
-Create `.env` files in both frontend and backend directories:
+## Setup
 
-**Frontend (.env)**
+### Backend
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create `backend/.env`:
 ```env
-VITE_API_BASE_URL=http://localhost:8000
-VITE_APP_NAME=SignEase MVP
-VITE_APP_VERSION=1.0.0
-VITE_ENABLE_PERFORMANCE_MONITORING=true
+SARVAM_API_KEY=your_sarvam_key   # optional — falls back to local Piper/faster-whisper if unset
 ```
 
-**Backend (.env)**
-```env
-MODEL_PATH=./models/asl_model_best_20251102_214717.json
-ENABLE_GPU=true
-LOG_LEVEL=INFO
-CORS_ORIGINS=http://localhost:5173,https://signease-mvp.vercel.app
+Run it:
+```bash
+uvicorn backend.app:app --host 0.0.0.0 --port 8001
 ```
 
-## 🎯 Live Demo
+Training your own models needs Kaggle API credentials (`~/.kaggle/kaggle.json`)
+and accepting the `asl-signs` competition rules on kaggle.com once, then:
+```bash
+python -m backend.training.prepare_letters
+python -m backend.training.train_letters
+python -m backend.training.prepare_words
+python -m backend.training.train_words
+python -m backend.training.export_sign_references
+```
 
-**🌐 [Try SignEase Live](https://signease-mvp.vercel.app)**
-
-### Demo Instructions
-1. Allow camera permissions when prompted
-2. Position your hand in the camera view
-3. Sign ASL letters (A-Z supported)
-4. Watch real-time recognition with AR overlay
-5. Use sentence builder for complete words
-6. Enable text-to-speech for voice output
-
-### Demo Features to Try
-- Spell "HELLO" in ASL
-- Toggle AR overlay modes (floating, fixed, following)
-- Adjust confidence thresholds
-- Try different lighting conditions
-- Test speech synthesis with various voices
-- Explore performance monitoring dashboard
-
-## 📊 Datasets & Models
-
-SignEase uses two different datasets and corresponding trained models to provide flexible ASL recognition capabilities:
-
-### Dataset 1: Lightweight Model (76K Parameters)
-- **Parameters**: 76,000 trainable parameters
-- **Source**: Custom curated dataset (included in project)
-- **Size**: Optimized for quick inference and lower resource usage
-- **Use Case**: Real-time recognition on devices with limited GPU/CPU resources
-- **Accuracy**: ~95-97% on validation set
-- **Inference Speed**: <50ms per prediction
-- **Model File**: `best_asl_model.pth` (included in repository)
-- **Training Scripts**: 
-  - `simple_tensorflow_trainer.py`
-  - `sklearn_asl_trainer.py`
-  - `improved_sklearn_trainer.py`
-
-### Dataset 2: High-Accuracy Model (3M Parameters)
-- **Parameters**: 3,000,000 trainable parameters
-- **Source**: [ASL Alphabet Dataset on Kaggle](https://www.kaggle.com/datasets/grassknoted/asl-alphabet)
-- **Dataset Details**:
-  - 87,000+ images of ASL alphabet signs
-  - 29 classes (A-Z letters + SPACE, DELETE, NOTHING)
-  - 200x200 RGB images
-  - Multiple hand positions and lighting conditions
-  - Diverse backgrounds and skin tones
-- **Use Case**: Maximum accuracy for production environments with adequate GPU resources
-- **Accuracy**: 99.57% on validation set
-- **Inference Speed**: ~100ms per prediction
-- **Model File**: `asl_model_best_20251102_214717.json` (in backend/models/)
-- **Training Scripts**:
-  - `gpu_train_asl.py`
-  - `tensorflow_gpu_asl_trainer.py`
-  - `pytorch_ultimate_gpu_trainer.py`
-  - `rtx5060_full_trainer.py`
-  - `max_gpu_utilization_trainer.py`
-
-### Dataset Comparison
-
-| Feature | Lightweight (76K) | High-Accuracy (3M) |
-|---------|-------------------|-------------------|
-| Parameters | 76,000 | 3,000,000 |
-| Model Size | ~300KB | ~12MB |
-| Training Time | ~10 minutes (CPU) | ~2-4 hours (GPU) |
-| Inference Speed | <50ms | ~100ms |
-| Accuracy | 95-97% | 99.57% |
-| GPU Required | No | Recommended |
-| Memory Usage | <256MB | <512MB |
-| Best For | Edge devices, demos | Production, high accuracy |
-
-### Downloading the Kaggle Dataset
-
-To train the high-accuracy model yourself:
-
-1. **Install Kaggle CLI**
-   ```bash
-   pip install kaggle
-   ```
-
-2. **Setup Kaggle API Credentials**
-   - Go to https://www.kaggle.com/account
-   - Create new API token (downloads `kaggle.json`)
-   - Place in `~/.kaggle/kaggle.json` (Linux/Mac) or `C:\Users\<username>\.kaggle\kaggle.json` (Windows)
-
-3. **Download Dataset**
-   ```bash
-   kaggle datasets download -d grassknoted/asl-alphabet
-   unzip asl-alphabet.zip -d ./data/asl-alphabet
-   ```
-
-4. **Train Model**
-   ```bash
-   # For GPU training (recommended)
-   python gpu_train_asl.py
-   
-   # For maximum GPU utilization
-   python max_gpu_utilization_trainer.py
-   
-   # For RTX 5060 optimized training
-   python rtx5060_full_trainer.py
-   ```
-
-### Model Selection Guide
-
-**Use Lightweight Model (76K) when:**
-- Deploying to edge devices or mobile
-- Limited GPU/CPU resources available
-- Quick inference time is critical
-- Running demos or prototypes
-- Bandwidth/storage is constrained
-
-**Use High-Accuracy Model (3M) when:**
-- Maximum accuracy is required
-- GPU resources are available
-- Production environment with quality requirements
-- Handling diverse lighting/background conditions
-- Need for robust real-world performance
-
-### Training Your Own Models
-
-Both models can be retrained with custom data:
+### Extension
 
 ```bash
-# Lightweight model training
-python simple_tensorflow_trainer.py --epochs 50 --batch-size 32
-
-# High-accuracy model training (requires GPU)
-python gpu_train_asl.py --epochs 100 --batch-size 64 --data-path ./data/asl-alphabet
-
-# Monitor training with GPU utilization
-python monitor_system.py
+cd extension
+npm install
+npm run build
 ```
 
-## 🏗️ Architecture
+Load it in Chrome: `chrome://extensions` → enable Developer mode → **Load
+unpacked** → select `extension/dist`. Set the backend URL in the extension
+popup if it isn't running on the default `http://localhost:8001`. Open a
+Google Meet call, click the SignEase Bridge panel, grant camera permission
+via the permission tab it opens, and hit Start.
 
-### System Overview
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Backend API    │    │   ML Pipeline   │
-│   (React/TS)    │◄──►│   (FastAPI)      │◄──►│   (TensorFlow)  │
-│                 │    │                  │    │                 │
-│ • Camera Input  │    │ • Gesture API    │    │ • Hand Tracking │
-│ • AR Overlay    │    │ • Health Check   │    │ • ASL Model     │
-│ • Speech Output │    │ • Performance    │    │ • Optimization  │
-│ • UI/UX         │    │ • Documentation  │    │ • Inference     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
+## Verification
 
-### Technology Stack
+- Backend accuracy numbers above are computed on a real held-out test split
+  by `train_letters.py` / `train_words.py` — rerun them to reproduce.
+- `camera-test/` was used to verify the camera → MediaPipe → prediction
+  pipeline in isolation before debugging any extension-specific behavior
+  (offscreen document lifecycle, message races, permission prompting).
+- Live-tested end-to-end in a real Google Meet call for both letter
+  spelling and word signing.
 
-**Frontend**
-- **Framework**: React 18 with TypeScript
-- **Build Tool**: Vite with HMR
-- **Styling**: Tailwind CSS with custom design system
-- **State Management**: React Context + Custom hooks
-- **Camera**: MediaPipe Hands for hand tracking
-- **Performance**: Custom optimization engine with GPU profiling
-- **Testing**: Vitest with 79 comprehensive tests
+## Roadmap
 
-**Backend**
-- **Framework**: FastAPI with async/await
-- **ML Framework**: TensorFlow 2.x with custom model
-- **Performance**: GPU acceleration with CUDA support
-- **API**: RESTful with automatic OpenAPI documentation
-- **Monitoring**: Custom performance tracking and optimization
-
-**ML Pipeline**
-- **Hand Tracking**: MediaPipe Hands (21 landmark points)
-- **Model**: Custom CNN trained on ASL dataset
-- **Accuracy**: 99.57% on validation set
-- **Optimization**: Model quantization and inference batching
-- **Real-time**: <100ms end-to-end latency
-
-## 📊 Performance Metrics
-
-### Accuracy Benchmarks
-- **Overall Accuracy**: 99.57%
-- **Per-letter Average**: 98.2%
-- **Confidence Threshold**: 70%
-- **False Positive Rate**: <2%
-
-### Performance Benchmarks
-- **End-to-end Latency**: <100ms
-- **Frame Rate**: 30 FPS sustained
-- **Memory Usage**: <512MB typical
-- **GPU Memory**: <2GB with optimization
-- **API Response Time**: <50ms average
-
-### Browser Compatibility
-- ✅ Chrome 90+ (Recommended)
-- ✅ Firefox 88+
-- ✅ Safari 14+
-- ✅ Edge 90+
-- ⚠️ Mobile browsers (limited performance)
-
-## 🧪 Testing
-
-### Test Coverage
-- **79 Total Tests** across 5 categories
-- **E2E Tests**: Complete user workflows
-- **Integration Tests**: Component interactions
-- **Performance Tests**: Speed and memory validation
-- **Accuracy Tests**: ML model validation
-- **Cross-browser Tests**: Compatibility validation
-
-### Running Tests
-```bash
-# Run all tests
-npm run test
-
-# Run specific test suites
-npm run test:e2e          # End-to-end tests
-npm run test:integration  # Integration tests
-npm run test:performance  # Performance tests
-npm run test:accuracy     # Accuracy validation
-npm run test:browser      # Cross-browser tests
-
-# Generate coverage report
-npm run test:coverage
-```
-
-## 🚀 Deployment
-
-### Vercel Deployment (Recommended)
-
-1. **Connect Repository**
-   ```bash
-   # Install Vercel CLI
-   npm i -g vercel
-   
-   # Deploy
-   vercel --prod
-   ```
-
-2. **Environment Configuration**
-   - Set environment variables in Vercel dashboard
-   - Configure custom domain if needed
-   - Enable analytics and monitoring
-
-3. **Backend Deployment**
-   - Deploy backend to Vercel Functions or separate service
-   - Update CORS origins for production domain
-   - Configure SSL certificates
-
-### Manual Deployment
-
-1. **Build for Production**
-   ```bash
-   npm run build
-   ```
-
-2. **Deploy Static Files**
-   - Upload `dist/` folder to your hosting provider
-   - Configure server for SPA routing
-   - Set up HTTPS and security headers
-
-## 🔧 Development
-
-### Project Structure
-```
-signease-mvp/
-├── signease-frontend/          # React frontend application
-│   ├── src/
-│   │   ├── components/         # React components
-│   │   ├── hooks/             # Custom React hooks
-│   │   ├── utils/             # Utility functions
-│   │   ├── styles/            # CSS and theme files
-│   │   └── tests/             # Test files
-│   ├── public/                # Static assets
-│   └── dist/                  # Build output
-├── backend/                   # FastAPI backend
-│   ├── api/                   # API routes
-│   ├── models/                # ML models
-│   ├── utils/                 # Utility functions
-│   └── tests/                 # Backend tests
-└── docs/                      # Documentation
-```
-
-### Development Commands
-
-**Frontend Development**
-```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run preview      # Preview production build
-npm run lint         # Run ESLint
-npm run type-check   # TypeScript type checking
-```
-
-**Backend Development**
-```bash
-python app.py        # Start development server
-python -m pytest    # Run backend tests
-python train.py      # Retrain ML model
-python optimize.py   # Optimize model performance
-```
-
-### Code Quality
-
-- **TypeScript**: Strict type checking enabled
-- **ESLint**: Airbnb configuration with custom rules
-- **Prettier**: Automatic code formatting
-- **Husky**: Pre-commit hooks for quality checks
-- **Conventional Commits**: Standardized commit messages
-
-## 📚 API Documentation
-
-### Core Endpoints
-
-#### Gesture Recognition
-```http
-POST /api/predict
-Content-Type: application/json
-
-{
-  "landmarks": [[x1, y1, z1], [x2, y2, z2], ...],
-  "confidence_threshold": 0.7
-}
-```
-
-**Response**
-```json
-{
-  "prediction": "A",
-  "confidence": 0.95,
-  "alternatives": [
-    {"prediction": "S", "confidence": 0.12},
-    {"prediction": "T", "confidence": 0.08}
-  ],
-  "processing_time": 45.2
-}
-```
-
-#### Health Check
-```http
-GET /api/health
-```
-
-**Response**
-```json
-{
-  "status": "healthy",
-  "version": "1.0.0",
-  "model_loaded": true,
-  "gpu_available": true,
-  "uptime": 3600.5
-}
-```
-
-#### Performance Metrics
-```http
-GET /api/metrics
-```
-
-**Response**
-```json
-{
-  "requests_per_second": 25.3,
-  "average_latency": 47.8,
-  "model_accuracy": 0.9957,
-  "gpu_memory_usage": 1.2,
-  "cache_hit_rate": 0.85
-}
-```
-
-### Interactive API Documentation
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## 🎨 UI/UX Features
-
-### Design System
-- **Modern Interface**: Clean, professional design
-- **Dark/Light Themes**: Automatic and manual switching
-- **Responsive Design**: Works on desktop, tablet, mobile
-- **Accessibility**: WCAG 2.1 AA compliant
-- **Animations**: Smooth transitions and micro-interactions
-
-### User Experience
-- **Intuitive Controls**: Easy-to-use interface
-- **Real-time Feedback**: Immediate visual confirmation
-- **Error Handling**: Graceful error messages and recovery
-- **Performance Monitoring**: Built-in performance dashboard
-- **Customization**: Extensive settings and preferences
-
-## 🔒 Security & Privacy
-
-### Security Features
-- **HTTPS Only**: Secure communication
-- **CSP Headers**: Content Security Policy protection
-- **Input Validation**: Server-side validation for all inputs
-- **Rate Limiting**: API abuse prevention
-- **Error Handling**: No sensitive information in error messages
-
-### Privacy Protection
-- **Local Processing**: Camera data never leaves the device
-- **No Data Storage**: No personal data stored on servers
-- **Minimal Logging**: Only essential metrics logged
-- **Transparent**: Open source for full transparency
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Setup
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
-
-### Code Standards
-- Follow TypeScript/Python best practices
-- Write comprehensive tests
-- Document new features
-- Follow conventional commit format
-- Ensure accessibility compliance
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **MediaPipe Team**: For excellent hand tracking technology
-- **TensorFlow Team**: For powerful ML framework
-- **ASL Community**: For inspiration and feedback
-- **Open Source Contributors**: For various libraries and tools
-
-## 📞 Support
-
-### Getting Help
-- **Documentation**: Check this README and inline documentation
-- **Issues**: Create a GitHub issue for bugs or feature requests
-- **Discussions**: Use GitHub Discussions for questions
-- **Email**: contact@signease.dev
-
-### Reporting Issues
-When reporting issues, please include:
-- Browser and version
-- Operating system
-- Steps to reproduce
-- Expected vs actual behavior
-- Console errors (if any)
-
----
-
-**Made with ❤️ for the deaf and hard-of-hearing community**
-
-*SignEase MVP - Breaking down communication barriers through technology*
+- Add MediaPipe PoseLandmarker to the client capture pipeline to close the
+  pose-accuracy gap on the word model.
+- In-call virtual camera/mic injection (`replaceTrack()` on the live
+  `RTCPeerConnection`) so the *other* call participant also hears/sees the
+  translation automatically, without looking at the extension's own panel.
+- Dedicated hardware / native mobile app — future phases, not started.

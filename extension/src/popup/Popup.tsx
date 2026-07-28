@@ -24,6 +24,16 @@ export function Popup() {
     }
   };
 
+  const openCameraPermissionTab = () => {
+    // Requesting getUserMedia directly here (in the action popup) is
+    // unreliable — showing the native prompt can blur the popup, and Chrome
+    // auto-closes popups on blur, canceling the pending request. A real tab
+    // doesn't have that problem, and the resulting grant is reused by the
+    // offscreen document's later getUserMedia calls (see
+    // START_HAND_TRACKING in types.ts for why hand tracking runs there).
+    chrome.tabs.create({ url: chrome.runtime.getURL("src/permission/permission.html") });
+  };
+
   return (
     <div style={{ padding: 14 }}>
       <strong>SignEase Bridge</strong>
@@ -44,6 +54,12 @@ export function Popup() {
           {status === "ok" ? "Connected" : "Could not reach backend"}
         </div>
       )}
+
+      <label style={{ fontSize: 11, display: "block", marginTop: 12 }}>Camera access (one-time)</label>
+      <button style={{ marginTop: 4, width: "100%" }} onClick={openCameraPermissionTab}>
+        Grant camera access
+      </button>
+      <p style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>Opens a tab — grant there, then you can close it.</p>
     </div>
   );
 }

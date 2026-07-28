@@ -23,7 +23,6 @@ export function OverlayPanel() {
 
   const sessionRef = useRef<SignToSpeechSession | null>(null);
   const playerRef = useRef(new SignPlaybackPlayer());
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -65,14 +64,9 @@ export function OverlayPanel() {
           onCaption: (text, conf) => {
             setCaption(text);
             setConfidence(conf);
+            setError(null);
           },
           onError: (message) => setError(message),
-          onAudioUrl: (url) => {
-            if (audioRef.current) {
-              audioRef.current.src = url;
-              void audioRef.current.play();
-            }
-          },
         },
         language
       );
@@ -211,8 +205,6 @@ export function OverlayPanel() {
           ))}
         </div>
       )}
-
-      <audio ref={audioRef} style={{ display: "none" }} />
     </div>
   );
 }

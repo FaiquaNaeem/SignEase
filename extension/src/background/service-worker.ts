@@ -3,7 +3,8 @@ import { bytesToBase64, base64ToBytes } from "../lib/base64";
 import type { BackendRequest, BackendResponse, ExtensionMessage } from "../types";
 
 const OFFSCREEN_PATH = "src/offscreen/offscreen.html";
-let activeTabId: number | null = null;
+let activeTranscriptionTabId: number | null = null;
+let activeHandTrackingTabId: number | null = null;
 
 // A held Port keeps this service worker alive for as long as the content
 // script wants (SignToSpeechSession opens one for the duration of a live
@@ -24,8 +25,17 @@ async function ensureOffscreenDocument() {
   await chrome.offscreen.createDocument({
     url: OFFSCREEN_PATH,
     reasons: [chrome.offscreen.Reason.USER_MEDIA],
-    justification: "Capture the video-call tab's audio for live speech-to-sign transcription.",
+    justification:
+      "Capture the video-call tab's audio for speech-to-sign transcription, and run camera-based hand tracking for sign-to-speech (must run in a normal single-world page — see START_HAND_TRACKING in types.ts).",
   });
+  // createDocument() resolving doesn't guarantee the page's own script has
+  // started running yet, and a message broadcast right after can still (in
+  // principle) beat its onMessage listener registration — a small, one-time
+  // grace period on first creation is cheap insurance against that residual
+  // race, on top of the lazy-import fix in offscreen.ts that removes the
+  // much bigger delay (the ~150KB MediaPipe bundle loading before anything
+  // else in that file could run).
+  await new Promise((resolve) => setTimeout(resolve, 150));
 }
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage | BackendRequest, sender, sendResponse) => {
@@ -72,7 +82,7 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
       // Chrome for messages from a content script) is the reliable source,
       // with message.tabId only as a fallback for non-content-script callers.
       const tabId = sender.tab?.id ?? message.tabId;
-      activeTabId = tabId;
+      activeTranscriptionTabId = tabId;
       await ensureOffscreenDocument();
       // getMediaStreamId must be called from the background/service worker;
       // the resulting streamId is then consumed inside the offscreen
@@ -91,7 +101,7 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
       return { ok: true };
     }
     case "STOP_TAB_TRANSCRIPTION": {
-      activeTabId = null;
+      activeTranscriptionTabId = null;
       chrome.runtime.sendMessage(message);
       return { ok: true };
     }
@@ -100,8 +110,32 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
       // Relayed from the offscreen document; forward to the content script
       // in the tab that started transcription (offscreen docs can't reach
       // content scripts directly).
-      if (activeTabId !== null) {
-        chrome.tabs.sendMessage(activeTabId, message);
+      if (activeTranscriptionTabId !== null) {
+        chrome.tabs.sendMessage(activeTranscriptionTabId, message);
+      }
+      return { ok: true };
+    }
+    case "START_HAND_TRACKING": {
+      activeHandTrackingTabId = sender.tab?.id ?? null;
+      await ensureOffscreenDocument();
+      chrome.runtime.sendMessage(message);
+      return { ok: true };
+    }
+    case "STOP_HAND_TRACKING":
+    case "SET_HAND_TRACKING_MODE":
+    case "SET_WORD_CAPTURING": {
+      // Forwarded straight through to the offscreen document, which is the
+      // only thing listening for these besides the sender itself.
+      chrome.runtime.sendMessage(message);
+      return { ok: true };
+    }
+    case "HAND_TRACKING_CAPTION":
+    case "HAND_TRACKING_ERROR":
+    case "HAND_TRACKING_DEBUG": {
+      // Relayed from the offscreen document; forward to the content script
+      // that started hand tracking.
+      if (activeHandTrackingTabId !== null) {
+        chrome.tabs.sendMessage(activeHandTrackingTabId, message);
       }
       return { ok: true };
     }

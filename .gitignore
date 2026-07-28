@@ -11,18 +11,21 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+# Anchored to repo root (leading slash) — unanchored "lib/" was silently
+# matching extension/src/lib/ too and excluding the entire extension
+# frontend library (api.ts, mediapipeHands.ts, etc.) from git.
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -366,3 +369,13 @@ backend/models/__pycache__/
 .kiro/settings/mcp.json
 .env
 *.env
+
+# Kaggle API token (real credentials, never commit)
+kaggle*.json
+
+# camera-test/ vendored binaries — copies of extension/node_modules and
+# extension/public assets kept locally for `python3 -m http.server`, not
+# source. Re-copy them from extension/ if you need to run this harness.
+camera-test/vision_bundle.mjs
+camera-test/hand_landmarker.task
+camera-test/mediapipe-wasm/
