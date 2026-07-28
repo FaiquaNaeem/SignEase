@@ -13,6 +13,13 @@ const MIN_CONFIDENCE = 0.55;
 const HAND_TRACKING_FPS = 12;
 const HAND_TRACKING_INTERVAL_MS = 1000 / HAND_TRACKING_FPS;
 const DIAGNOSTIC_INTERVAL_MS = 2000;
+// Word capture used to require holding a mouse button down while signing —
+// impractical when both hands are busy signing. Instead, treat hand
+// presence itself as the start/stop signal: buffering begins the moment a
+// hand enters frame, and ends once no hand has been seen for this long
+// (long enough to survive a brief tracking dropout mid-sign, short enough
+// that lowering your hands reads as "done" without an awkward pause).
+const WORD_HAND_ABSENT_DEBOUNCE_MS = 500;
 
 // TTS engines mumble/skip bare single characters ("V" often comes out as
 // near-silence or a stray consonant sound) — speaking the letter's name
@@ -36,6 +43,7 @@ let lastLetterPredictAt = 0;
 let lastDiagnosticAt = 0;
 let wordBuffer: WordFrame[] = [];
 let wordCapturing = false;
+let wordLastHandSeenAt = 0;
 let audioEl: HTMLAudioElement | null = null;
 let lastSpokenLetter: string | null = null;
 
@@ -88,22 +96,16 @@ export function stopHandTracking() {
   audioEl = null;
   wordBuffer = [];
   wordCapturing = false;
+  wordLastHandSeenAt = 0;
   lastSpokenLetter = null;
 }
 
 export function setHandTrackingMode(newMode: HandTrackingMode) {
   mode = newMode;
   wordBuffer = [];
+  wordCapturing = false;
+  wordLastHandSeenAt = 0;
   lastSpokenLetter = null;
-}
-
-export function setWordCapturing(capturing: boolean) {
-  wordCapturing = capturing;
-  if (capturing) {
-    wordBuffer = [];
-  } else {
-    void finishWordCapture();
-  }
 }
 
 function loop() {
@@ -113,12 +115,8 @@ function loop() {
   tracker
     .processFrame(video)
     .then(() => {
-      // Only push once a fresh detection actually landed — pushing on
-      // every tick instead of once per detection would flood the buffer
-      // with duplicate frames carrying no new temporal information.
-      if (!wordCapturing || !tracker) return;
-      const { left, right } = tracker.getLatest();
-      if (left || right) wordBuffer.push({ leftHand: left, rightHand: right, pose: null });
+      if (mode !== "word" || !tracker) return;
+      updateWordCapture(now);
     })
     .catch((err) => report({ type: "HAND_TRACKING_ERROR", message: err instanceof Error ? err.message : String(err) }));
 
@@ -165,6 +163,25 @@ async function predictCurrentLetter() {
     const msg = err instanceof Error ? err.message : String(err);
     debug("PREDICT_LETTER", false, msg, performance.now() - t0);
     report({ type: "HAND_TRACKING_ERROR", message: msg });
+  }
+}
+
+function updateWordCapture(now: number) {
+  if (!tracker) return;
+  const { left, right } = tracker.getLatest();
+  const handPresent = !!(left || right);
+
+  if (handPresent) {
+    wordLastHandSeenAt = now;
+    if (!wordCapturing) {
+      wordCapturing = true;
+      wordBuffer = [];
+      report({ type: "HAND_TRACKING_CAPTION", text: "Signing…", confidence: 0 });
+    }
+    wordBuffer.push({ leftHand: left, rightHand: right, pose: null });
+  } else if (wordCapturing && now - wordLastHandSeenAt > WORD_HAND_ABSENT_DEBOUNCE_MS) {
+    wordCapturing = false;
+    void finishWordCapture();
   }
 }
 

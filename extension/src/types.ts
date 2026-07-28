@@ -64,7 +64,6 @@ export type ExtensionMessage =
   | { type: "START_HAND_TRACKING"; mode: HandTrackingMode; language: SignLanguage }
   | { type: "STOP_HAND_TRACKING" }
   | { type: "SET_HAND_TRACKING_MODE"; mode: HandTrackingMode }
-  | { type: "SET_WORD_CAPTURING"; capturing: boolean }
   | { type: "HAND_TRACKING_CAPTION"; text: string; confidence: number }
   | { type: "HAND_TRACKING_ERROR"; message: string }
   | { type: "HAND_TRACKING_DEBUG"; entry: { label: string; ok: boolean; detail: string; durationMs: number } };

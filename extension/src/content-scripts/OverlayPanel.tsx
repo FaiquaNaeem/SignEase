@@ -94,8 +94,6 @@ export function OverlayPanel() {
     setRunning(false);
   };
 
-  const toggleWordHold = (holding: boolean) => sessionRef.current?.setWordCapturing(holding);
-
   return (
     <div style={panelStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -169,14 +167,9 @@ export function OverlayPanel() {
       </button>
 
       {direction === "signToSpeech" && mode === "word" && running && (
-        <button
-          style={{ marginTop: 6, width: "100%" }}
-          onMouseDown={() => toggleWordHold(true)}
-          onMouseUp={() => toggleWordHold(false)}
-          onMouseLeave={() => toggleWordHold(false)}
-        >
-          Hold to sign a word
-        </button>
+        <div style={{ marginTop: 6, fontSize: 10, opacity: 0.7 }}>
+          Sign with your hand(s) in frame, then lower them to finish — no button needed.
+        </div>
       )}
 
       <div style={{ marginTop: 10, fontSize: 20, fontWeight: 600, minHeight: 28 }}>{caption || "…"}</div>

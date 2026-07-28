@@ -43,8 +43,4 @@ export class SignToSpeechSession {
     chrome.runtime.sendMessage({ type: "STOP_HAND_TRACKING" } satisfies ExtensionMessage);
     chrome.runtime.onMessage.removeListener(this.listener);
   }
-
-  setWordCapturing(capturing: boolean) {
-    chrome.runtime.sendMessage({ type: "SET_WORD_CAPTURING", capturing } satisfies ExtensionMessage);
-  }
 }

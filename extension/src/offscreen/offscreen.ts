@@ -43,8 +43,6 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
     getHandTracking().then((ht) => ht.stopHandTracking());
   } else if (message.type === "SET_HAND_TRACKING_MODE") {
     getHandTracking().then((ht) => ht.setHandTrackingMode(message.mode));
-  } else if (message.type === "SET_WORD_CAPTURING") {
-    getHandTracking().then((ht) => ht.setWordCapturing(message.capturing));
   }
 });
 

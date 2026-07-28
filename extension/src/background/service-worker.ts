@@ -122,8 +122,7 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
       return { ok: true };
     }
     case "STOP_HAND_TRACKING":
-    case "SET_HAND_TRACKING_MODE":
-    case "SET_WORD_CAPTURING": {
+    case "SET_HAND_TRACKING_MODE": {
       // Forwarded straight through to the offscreen document, which is the
       // only thing listening for these besides the sender itself.
       chrome.runtime.sendMessage(message);
