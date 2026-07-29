@@ -20,6 +20,12 @@ const DIAGNOSTIC_INTERVAL_MS = 2000;
 // (long enough to survive a brief tracking dropout mid-sign, short enough
 // that lowering your hands reads as "done" without an awkward pause).
 const WORD_HAND_ABSENT_DEBOUNCE_MS = 500;
+// Multiple words signed in a row (with normal short gaps between them)
+// accumulate into one sentence instead of being spoken one at a time.
+// A sentence is considered finished once this much silence follows the
+// *last completed word* — long enough that a normal pause between signs
+// doesn't cut it off, short enough that it doesn't feel unresponsive.
+const SENTENCE_END_DEBOUNCE_MS = 2500;
 
 // TTS engines mumble/skip bare single characters ("V" often comes out as
 // near-silence or a stray consonant sound) — speaking the letter's name
@@ -44,6 +50,8 @@ let lastDiagnosticAt = 0;
 let wordBuffer: WordFrame[] = [];
 let wordCapturing = false;
 let wordLastHandSeenAt = 0;
+let sentenceWords: string[] = [];
+let sentenceLastActivityAt = 0;
 let audioEl: HTMLAudioElement | null = null;
 let lastSpokenLetter: string | null = null;
 
@@ -97,6 +105,8 @@ export function stopHandTracking() {
   wordBuffer = [];
   wordCapturing = false;
   wordLastHandSeenAt = 0;
+  sentenceWords = [];
+  sentenceLastActivityAt = 0;
   lastSpokenLetter = null;
 }
 
@@ -105,6 +115,8 @@ export function setHandTrackingMode(newMode: HandTrackingMode) {
   wordBuffer = [];
   wordCapturing = false;
   wordLastHandSeenAt = 0;
+  sentenceWords = [];
+  sentenceLastActivityAt = 0;
   lastSpokenLetter = null;
 }
 
@@ -181,11 +193,18 @@ function updateWordCapture(now: number) {
     wordBuffer.push({ leftHand: left, rightHand: right, pose: null });
   } else if (wordCapturing && now - wordLastHandSeenAt > WORD_HAND_ABSENT_DEBOUNCE_MS) {
     wordCapturing = false;
-    void finishWordCapture();
+    void finishWordCapture(now);
+  }
+
+  // Not mid-word (guards against cutting off a sign that's just taking a
+  // while) and it's been quiet long enough since the last completed word —
+  // that's a finished sentence, not just a gap before the next sign.
+  if (!wordCapturing && sentenceWords.length > 0 && now - sentenceLastActivityAt > SENTENCE_END_DEBOUNCE_MS) {
+    void finalizeSentence();
   }
 }
 
-async function finishWordCapture() {
+async function finishWordCapture(now: number) {
   if (wordBuffer.length < 3) return;
   const frames = wordBuffer;
   wordBuffer = [];
@@ -194,14 +213,25 @@ async function finishWordCapture() {
     const result = await predictWord(frames);
     debug("PREDICT_WORD", true, `${result.label} ${(result.confidence * 100).toFixed(0)}%`, performance.now() - t0);
     if (result.confidence >= MIN_CONFIDENCE) {
-      report({ type: "HAND_TRACKING_CAPTION", text: result.label, confidence: result.confidence });
-      await playSpeech(result.label);
+      // Accumulate rather than speak immediately — a full sentence is
+      // announced together once finalizeSentence() decides it's done.
+      sentenceWords.push(result.label);
+      sentenceLastActivityAt = now;
+      report({ type: "HAND_TRACKING_CAPTION", text: sentenceWords.join(" "), confidence: result.confidence });
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     debug("PREDICT_WORD", false, msg, performance.now() - t0);
     report({ type: "HAND_TRACKING_ERROR", message: msg });
   }
+}
+
+async function finalizeSentence() {
+  const sentence = sentenceWords.join(" ");
+  sentenceWords = [];
+  if (!sentence) return;
+  debug("SENTENCE_DONE", true, sentence, 0);
+  await playSpeech(sentence);
 }
 
 async function playSpeech(text: string) {

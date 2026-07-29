@@ -168,7 +168,8 @@ export function OverlayPanel() {
 
       {direction === "signToSpeech" && mode === "word" && running && (
         <div style={{ marginTop: 6, fontSize: 10, opacity: 0.7 }}>
-          Sign with your hand(s) in frame, then lower them to finish — no button needed.
+          Sign each word, pausing briefly between them — the sentence is
+          spoken once you stop signing for a couple seconds.
         </div>
       )}
 
