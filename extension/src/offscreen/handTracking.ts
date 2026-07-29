@@ -24,8 +24,11 @@ const WORD_HAND_ABSENT_DEBOUNCE_MS = 500;
 // accumulate into one sentence instead of being spoken one at a time.
 // A sentence is considered finished once this much silence follows the
 // *last completed word* — long enough that a normal pause between signs
-// doesn't cut it off, short enough that it doesn't feel unresponsive.
-const SENTENCE_END_DEBOUNCE_MS = 2500;
+// doesn't cut it off, short enough that it doesn't feel unresponsive. This
+// stacks on top of WORD_HAND_ABSENT_DEBOUNCE_MS, so a single signed word
+// takes WORD_HAND_ABSENT_DEBOUNCE_MS + SENTENCE_END_DEBOUNCE_MS of total
+// silence before it's spoken — kept short for that reason.
+const SENTENCE_END_DEBOUNCE_MS = 1200;
 
 // TTS engines mumble/skip bare single characters ("V" often comes out as
 // near-silence or a stray consonant sound) — speaking the letter's name
