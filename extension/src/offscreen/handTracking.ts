@@ -137,12 +137,28 @@ export function setHandTrackingMode(newMode: HandTrackingMode) {
   lastSpokenLetter = null;
 }
 
+// If a tick's processing (hand + pose, both real WASM calls) ever hangs or
+// simply never settles for any reason, frameBusy alone would stay stuck
+// true forever and silently kill the whole loop for the rest of the
+// session — no error, no recovery, tracking just stops touching the camera
+// again. This bounds how long a tick can hold the lock before it's forced
+// to release, trading "possibly overlaps once" for "definitely doesn't
+// deadlock permanently."
+const FRAME_TIMEOUT_MS = 1500;
+
 function loop() {
   if (!video || !tracker || frameBusy) return;
   const currentVideo = video;
   const now = performance.now();
 
   frameBusy = true;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    frameBusy = false;
+  };
+
   tracker
     .processFrame(currentVideo)
     .then(() => {
@@ -157,9 +173,13 @@ function loop() {
       updateWordCapture(now);
     })
     .catch((err) => report({ type: "HAND_TRACKING_ERROR", message: err instanceof Error ? err.message : String(err) }))
-    .finally(() => {
-      frameBusy = false;
-    });
+    .finally(release);
+
+  setTimeout(() => {
+    if (released) return;
+    debug("FRAME_TIMEOUT", false, `frame processing exceeded ${FRAME_TIMEOUT_MS}ms — forcing release`, FRAME_TIMEOUT_MS);
+    release();
+  }, FRAME_TIMEOUT_MS);
 
   if (mode === "letter" && now - lastLetterPredictAt > LETTER_PREDICT_INTERVAL_MS) {
     lastLetterPredictAt = now;
