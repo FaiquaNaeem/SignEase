@@ -1,4 +1,5 @@
 import { HandLandmarkTracker } from "../lib/mediapipeHands";
+import { PoseLandmarkTracker } from "../lib/mediapipePose";
 import { predictLetter, predictWord, speak } from "../lib/api";
 import type { ExtensionMessage, HandTrackingMode, Landmark, SignLanguage, WordFrame } from "../types";
 
@@ -44,6 +45,7 @@ const LETTER_NAMES: Record<string, string> = {
 
 let video: HTMLVideoElement | null = null;
 let tracker: HandLandmarkTracker | null = null;
+let poseTracker: PoseLandmarkTracker | null = null;
 let stream: MediaStream | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let mode: HandTrackingMode = "letter";
@@ -78,6 +80,7 @@ export async function startHandTracking(newMode: HandTrackingMode, newLanguage: 
   document.body.appendChild(audioEl);
 
   tracker = new HandLandmarkTracker();
+  poseTracker = new PoseLandmarkTracker();
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
   } catch (err) {
@@ -102,6 +105,8 @@ export function stopHandTracking() {
   stream = null;
   tracker?.close();
   tracker = null;
+  poseTracker?.close();
+  poseTracker = null;
   video = null;
   audioEl?.remove();
   audioEl = null;
@@ -125,10 +130,18 @@ export function setHandTrackingMode(newMode: HandTrackingMode) {
 
 function loop() {
   if (!video || !tracker) return;
+  const currentVideo = video;
   const now = performance.now();
 
   tracker
-    .processFrame(video)
+    .processFrame(currentVideo)
+    .then(() => {
+      if (mode !== "word" || !tracker) return;
+      // Pose is only actually needed for word capture (the letter model
+      // was never trained on it) — but both trackers must finish this
+      // tick's frame before word capture reads either one's latest result.
+      return poseTracker?.processFrame(currentVideo);
+    })
     .then(() => {
       if (mode !== "word" || !tracker) return;
       updateWordCapture(now);
@@ -143,10 +156,14 @@ function loop() {
   if (now - lastDiagnosticAt > DIAGNOSTIC_INTERVAL_MS) {
     lastDiagnosticAt = now;
     const stats = tracker.getStats();
+    const poseStats = poseTracker?.getStats();
+    const poseInfo = poseStats
+      ? ` | pose attempted=${poseStats.framesAttempted} sent=${poseStats.framesSent} poseSeen=${poseStats.poseDetectedCount} poseErr=${poseStats.lastSendError ?? "none"}`
+      : "";
     debug(
       "MEDIAPIPE_STATS",
       stats.handsDetectedCount > 0,
-      `video ${video.videoWidth}x${video.videoHeight} readyState=${video.readyState} | attempted=${stats.framesAttempted} notReady=${stats.framesNotReady} sent=${stats.framesSent} results=${stats.resultsReceived} handsSeen=${stats.handsDetectedCount} sendErr=${stats.lastSendError ?? "none"}`,
+      `video ${video.videoWidth}x${video.videoHeight} readyState=${video.readyState} | attempted=${stats.framesAttempted} notReady=${stats.framesNotReady} sent=${stats.framesSent} results=${stats.resultsReceived} handsSeen=${stats.handsDetectedCount} sendErr=${stats.lastSendError ?? "none"}${poseInfo}`,
       0
     );
   }
@@ -193,7 +210,7 @@ function updateWordCapture(now: number) {
       wordBuffer = [];
       report({ type: "HAND_TRACKING_CAPTION", text: "Signing…", confidence: 0 });
     }
-    wordBuffer.push({ leftHand: left, rightHand: right, pose: null });
+    wordBuffer.push({ leftHand: left, rightHand: right, pose: poseTracker?.getLatest() ?? null });
   } else if (wordCapturing && now - wordLastHandSeenAt > WORD_HAND_ABSENT_DEBOUNCE_MS) {
     wordCapturing = false;
     void finishWordCapture(now);

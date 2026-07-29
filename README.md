@@ -37,14 +37,17 @@ meaningfully harder problem than 45, especially with visually similar signs
 (e.g. "sleep"/"sleepy", "tooth"/"tongue"). Per-class precision/recall is in
 `backend/checkpoints/word_classifier_report.json`.
 
-**Known limitation:** the word model was trained on hand *and* upper-body
-pose landmarks (MediaPipe Holistic), but the extension currently only
-captures hands (MediaPipe HandLandmarker) — there's no pose tracking in the
-browser yet. Feeding zeroed-out pose data at inference costs real accuracy on
-pose-dependent signs (measured offline on the 45-word model: forcing pose to
-all-zero dropped accuracy from 80.94% to ~52%). This is a documented gap, not
-a silent bug — closing it means adding MediaPipe's PoseLandmarker to the
-client capture pipeline, tracked as a follow-up.
+**Resolved pose-tracking gap:** the word model is trained on hand *and*
+upper-body pose landmarks (shoulders/elbows/wrists/hips), but the extension
+originally only captured hands, silently sending zeroed-out pose at
+inference. Measured impact on the 250-class model: real-pose test accuracy
+is 71.85%, but with pose zeroed out (the old client behavior) it drops to
+41.40% overall — and much further on specific signs (e.g. "hello": 69.5%
+with pose vs 22.0% without, frequently misread as "brown" or "will" without
+it). The extension now runs MediaPipe's PoseLandmarker alongside the hand
+tracker and sends real pose data, matching training conditions —
+confirmed end-to-end against the live backend: 4 of 5 real "hello" samples
+correctly recognized with pose included, vs 1 of 5 without.
 
 Recognized word vocabulary (250 words, not general ASL — sourced from the
 full Kaggle `asl-signs` dataset, a baby/family sign-language app's
@@ -203,8 +206,8 @@ via the permission tab it opens, and hit Start.
 
 ## Roadmap
 
-- Add MediaPipe PoseLandmarker to the client capture pipeline to close the
-  pose-accuracy gap on the word model.
+- Sentence-level word-order/grammar cleanup (currently spoken exactly as
+  signed, in signed order — no rewriting).
 - In-call virtual camera/mic injection (`replaceTrack()` on the live
   `RTCPeerConnection`) so the *other* call participant also hears/sees the
   translation automatically, without looking at the extension's own panel.
