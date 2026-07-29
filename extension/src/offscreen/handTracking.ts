@@ -30,6 +30,17 @@ const WORD_HAND_ABSENT_DEBOUNCE_MS = 500;
 // takes WORD_HAND_ABSENT_DEBOUNCE_MS + SENTENCE_END_DEBOUNCE_MS of total
 // silence before it's spoken — kept short for that reason.
 const SENTENCE_END_DEBOUNCE_MS = 1200;
+// Running two CPU-bound MediaPipe models every single tick (~12fps) proved
+// too heavy to sustain in a real call — the offscreen document was getting
+// killed under memory/CPU pressure and silently recreated (visible as a
+// hard reset in MEDIAPIPE_STATS: video back to 0x0, every counter back
+// near zero), which is why word mode would work briefly then stop
+// entirely while letter mode (hand-only, no pose) stayed fine throughout.
+// Body pose changes far more slowly than hand shape frame-to-frame, so
+// there's no need to run it at the same rate as hand tracking — sampling
+// it this much less often cuts its share of the load substantially while
+// still giving every signed word several real (non-zero) pose samples.
+const POSE_SAMPLE_EVERY_N_TICKS = 4;
 
 // TTS engines mumble/skip bare single characters ("V" often comes out as
 // near-silence or a stray consonant sound) — speaking the letter's name
@@ -67,6 +78,7 @@ let sentenceWords: string[] = [];
 let sentenceLastActivityAt = 0;
 let audioEl: HTMLAudioElement | null = null;
 let lastSpokenLetter: string | null = null;
+let tickCount = 0;
 
 function report(message: ExtensionMessage) {
   chrome.runtime.sendMessage(message);
@@ -152,6 +164,8 @@ function loop() {
   const now = performance.now();
 
   frameBusy = true;
+  tickCount++;
+  const shouldSamplePose = tickCount % POSE_SAMPLE_EVERY_N_TICKS === 0;
   let released = false;
   const release = () => {
     if (released) return;
@@ -162,7 +176,7 @@ function loop() {
   tracker
     .processFrame(currentVideo)
     .then(() => {
-      if (mode !== "word" || !tracker) return;
+      if (mode !== "word" || !tracker || !shouldSamplePose) return;
       // Pose is only actually needed for word capture (the letter model
       // was never trained on it) — but both trackers must finish this
       // tick's frame before word capture reads either one's latest result.
