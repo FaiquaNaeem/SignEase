@@ -84,6 +84,7 @@ export class PoseLandmarkTracker {
       } else {
         this.latest = null;
       }
+      this.lastSendError = null;
     } catch (err) {
       this.lastSendError = err instanceof Error ? err.message : String(err);
     }

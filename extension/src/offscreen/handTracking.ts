@@ -48,6 +48,14 @@ let tracker: HandLandmarkTracker | null = null;
 let poseTracker: PoseLandmarkTracker | null = null;
 let stream: MediaStream | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
+// setInterval fires on a fixed schedule regardless of whether the previous
+// tick's processFrame() calls have actually finished. Running two CPU-bound
+// models per tick (hand + pose) can take longer than the tick interval,
+// and firing a new detectForVideo() into either landmarker while the last
+// one is still in flight isn't safe — it produces corrupted/mismatched
+// results rather than an error, which is much harder to notice. This flag
+// makes a tick that's still busy skip cleanly instead of overlapping.
+let frameBusy = false;
 let mode: HandTrackingMode = "letter";
 let language: SignLanguage = "en-IN";
 let lastLetterPredictAt = 0;
@@ -101,6 +109,7 @@ export async function startHandTracking(newMode: HandTrackingMode, newLanguage: 
 export function stopHandTracking() {
   if (intervalId !== null) clearInterval(intervalId);
   intervalId = null;
+  frameBusy = false;
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
   tracker?.close();
@@ -129,10 +138,11 @@ export function setHandTrackingMode(newMode: HandTrackingMode) {
 }
 
 function loop() {
-  if (!video || !tracker) return;
+  if (!video || !tracker || frameBusy) return;
   const currentVideo = video;
   const now = performance.now();
 
+  frameBusy = true;
   tracker
     .processFrame(currentVideo)
     .then(() => {
@@ -146,7 +156,10 @@ function loop() {
       if (mode !== "word" || !tracker) return;
       updateWordCapture(now);
     })
-    .catch((err) => report({ type: "HAND_TRACKING_ERROR", message: err instanceof Error ? err.message : String(err) }));
+    .catch((err) => report({ type: "HAND_TRACKING_ERROR", message: err instanceof Error ? err.message : String(err) }))
+    .finally(() => {
+      frameBusy = false;
+    });
 
   if (mode === "letter" && now - lastLetterPredictAt > LETTER_PREDICT_INTERVAL_MS) {
     lastLetterPredictAt = now;

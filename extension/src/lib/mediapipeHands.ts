@@ -126,6 +126,11 @@ export class HandLandmarkTracker {
       });
       if (left || right) this.handsDetectedCount++;
       this.latest = { left, right };
+      // Clear any earlier error (e.g. the transient "model still
+      // initializing" from this tracker's first few ticks) now that a
+      // frame has actually succeeded — otherwise stats keep reporting a
+      // stale failure forever even once things are working fine.
+      this.lastSendError = null;
     } catch (err) {
       this.lastSendError = err instanceof Error ? err.message : String(err);
     }
