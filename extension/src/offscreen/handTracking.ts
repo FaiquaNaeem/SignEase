@@ -207,8 +207,20 @@ function updateWordCapture(now: number) {
   }
 }
 
+// Whatever's already been confirmed for the current sentence, or "…" if
+// nothing has been — the caption to fall back to whenever a capture attempt
+// ends without adding a new word, so it never gets stuck showing "Signing…"
+// from a sign that turned out too brief or too low-confidence to use.
+function idleCaption() {
+  report({ type: "HAND_TRACKING_CAPTION", text: sentenceWords.length ? sentenceWords.join(" ") : "…", confidence: 0 });
+}
+
 async function finishWordCapture(now: number) {
-  if (wordBuffer.length < 3) return;
+  if (wordBuffer.length < 3) {
+    wordBuffer = [];
+    idleCaption();
+    return;
+  }
   const frames = wordBuffer;
   wordBuffer = [];
   const t0 = performance.now();
@@ -221,11 +233,16 @@ async function finishWordCapture(now: number) {
       sentenceWords.push(result.label);
       sentenceLastActivityAt = now;
       report({ type: "HAND_TRACKING_CAPTION", text: sentenceWords.join(" "), confidence: result.confidence });
+    } else {
+      // Below-threshold guess — don't add it to the sentence, but still
+      // tell the UI capture ended instead of leaving it stuck.
+      idleCaption();
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     debug("PREDICT_WORD", false, msg, performance.now() - t0);
     report({ type: "HAND_TRACKING_ERROR", message: msg });
+    idleCaption();
   }
 }
 
