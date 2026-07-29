@@ -45,7 +45,7 @@ export default defineManifest({
   ],
   web_accessible_resources: [
     {
-      resources: ["mediapipe-wasm/*", "hand_landmarker.task", "pose_landmarker.task", "sign_references.json"],
+      resources: ["mediapipe-wasm/*", "hand_landmarker.task", "sign_references.json"],
       matches: [
         "https://meet.google.com/*",
         "https://*.zoom.us/*",

@@ -37,17 +37,22 @@ meaningfully harder problem than 45, especially with visually similar signs
 (e.g. "sleep"/"sleepy", "tooth"/"tongue"). Per-class precision/recall is in
 `backend/checkpoints/word_classifier_report.json`.
 
-**Resolved pose-tracking gap:** the word model is trained on hand *and*
-upper-body pose landmarks (shoulders/elbows/wrists/hips), but the extension
-originally only captured hands, silently sending zeroed-out pose at
-inference. Measured impact on the 250-class model: real-pose test accuracy
-is 71.85%, but with pose zeroed out (the old client behavior) it drops to
-41.40% overall — and much further on specific signs (e.g. "hello": 69.5%
-with pose vs 22.0% without, frequently misread as "brown" or "will" without
-it). The extension now runs MediaPipe's PoseLandmarker alongside the hand
-tracker and sends real pose data, matching training conditions —
-confirmed end-to-end against the live backend: 4 of 5 real "hello" samples
-correctly recognized with pose included, vs 1 of 5 without.
+**Known limitation — pose-tracking gap:** the word model is trained on hand
+*and* upper-body pose landmarks (shoulders/elbows/wrists/hips), but the
+extension only captures hands, sending zeroed-out pose at inference. Measured
+impact on the 250-class model: real-pose test accuracy is 71.85%, but with
+pose zeroed out (the client's actual behavior) it drops to 41.40% overall —
+and much further on specific signs (e.g. "hello": 69.5% with pose vs 22.0%
+without, frequently misread as "brown" or "will" without it). A working
+client-side fix (MediaPipe PoseLandmarker alongside the hand tracker,
+`extension/src/lib/mediapipePose.ts`) was built and verified end-to-end
+against the live backend (4 of 5 real "hello" samples correctly recognized
+with pose included, vs 1 of 5 without) — but running two ML models
+continuously in a real call wasn't stable (the offscreen document got killed
+under memory/CPU pressure and silently restarted, dropping tracking
+mid-session), so it's currently disabled. Re-enabling it needs either a
+lower capture resolution or moving one model to a Web Worker; see the doc
+comment at the top of `mediapipePose.ts` for exact re-enable steps.
 
 Recognized word vocabulary (250 words, not general ASL — sourced from the
 full Kaggle `asl-signs` dataset, a baby/family sign-language app's
@@ -206,6 +211,9 @@ via the permission tab it opens, and hit Start.
 
 ## Roadmap
 
+- Re-enable pose tracking without destabilizing the session — the biggest
+  remaining accuracy lever (see "Known limitation" above). Needs a lower
+  capture resolution or moving one model to a Web Worker.
 - Sentence-level word-order/grammar cleanup (currently spoken exactly as
   signed, in signed order — no rewriting).
 - In-call virtual camera/mic injection (`replaceTrack()` on the live

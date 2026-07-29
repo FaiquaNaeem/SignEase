@@ -1,5 +1,4 @@
 import { HandLandmarkTracker } from "../lib/mediapipeHands";
-import { PoseLandmarkTracker } from "../lib/mediapipePose";
 import { predictLetter, predictWord, speak } from "../lib/api";
 import type { ExtensionMessage, HandTrackingMode, Landmark, SignLanguage, WordFrame } from "../types";
 
@@ -30,17 +29,6 @@ const WORD_HAND_ABSENT_DEBOUNCE_MS = 500;
 // takes WORD_HAND_ABSENT_DEBOUNCE_MS + SENTENCE_END_DEBOUNCE_MS of total
 // silence before it's spoken — kept short for that reason.
 const SENTENCE_END_DEBOUNCE_MS = 1200;
-// Running two CPU-bound MediaPipe models every single tick (~12fps) proved
-// too heavy to sustain in a real call — the offscreen document was getting
-// killed under memory/CPU pressure and silently recreated (visible as a
-// hard reset in MEDIAPIPE_STATS: video back to 0x0, every counter back
-// near zero), which is why word mode would work briefly then stop
-// entirely while letter mode (hand-only, no pose) stayed fine throughout.
-// Body pose changes far more slowly than hand shape frame-to-frame, so
-// there's no need to run it at the same rate as hand tracking — sampling
-// it this much less often cuts its share of the load substantially while
-// still giving every signed word several real (non-zero) pose samples.
-const POSE_SAMPLE_EVERY_N_TICKS = 4;
 
 // TTS engines mumble/skip bare single characters ("V" often comes out as
 // near-silence or a stray consonant sound) — speaking the letter's name
@@ -56,7 +44,6 @@ const LETTER_NAMES: Record<string, string> = {
 
 let video: HTMLVideoElement | null = null;
 let tracker: HandLandmarkTracker | null = null;
-let poseTracker: PoseLandmarkTracker | null = null;
 let stream: MediaStream | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 // setInterval fires on a fixed schedule regardless of whether the previous
@@ -78,7 +65,6 @@ let sentenceWords: string[] = [];
 let sentenceLastActivityAt = 0;
 let audioEl: HTMLAudioElement | null = null;
 let lastSpokenLetter: string | null = null;
-let tickCount = 0;
 
 function report(message: ExtensionMessage) {
   chrome.runtime.sendMessage(message);
@@ -100,7 +86,6 @@ export async function startHandTracking(newMode: HandTrackingMode, newLanguage: 
   document.body.appendChild(audioEl);
 
   tracker = new HandLandmarkTracker();
-  poseTracker = new PoseLandmarkTracker();
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
   } catch (err) {
@@ -126,8 +111,6 @@ export function stopHandTracking() {
   stream = null;
   tracker?.close();
   tracker = null;
-  poseTracker?.close();
-  poseTracker = null;
   video = null;
   audioEl?.remove();
   audioEl = null;
@@ -164,8 +147,6 @@ function loop() {
   const now = performance.now();
 
   frameBusy = true;
-  tickCount++;
-  const shouldSamplePose = tickCount % POSE_SAMPLE_EVERY_N_TICKS === 0;
   let released = false;
   const release = () => {
     if (released) return;
@@ -175,13 +156,6 @@ function loop() {
 
   tracker
     .processFrame(currentVideo)
-    .then(() => {
-      if (mode !== "word" || !tracker || !shouldSamplePose) return;
-      // Pose is only actually needed for word capture (the letter model
-      // was never trained on it) — but both trackers must finish this
-      // tick's frame before word capture reads either one's latest result.
-      return poseTracker?.processFrame(currentVideo);
-    })
     .then(() => {
       if (mode !== "word" || !tracker) return;
       updateWordCapture(now);
@@ -203,14 +177,10 @@ function loop() {
   if (now - lastDiagnosticAt > DIAGNOSTIC_INTERVAL_MS) {
     lastDiagnosticAt = now;
     const stats = tracker.getStats();
-    const poseStats = poseTracker?.getStats();
-    const poseInfo = poseStats
-      ? ` | pose attempted=${poseStats.framesAttempted} sent=${poseStats.framesSent} poseSeen=${poseStats.poseDetectedCount} poseErr=${poseStats.lastSendError ?? "none"}`
-      : "";
     debug(
       "MEDIAPIPE_STATS",
       stats.handsDetectedCount > 0,
-      `video ${video.videoWidth}x${video.videoHeight} readyState=${video.readyState} | attempted=${stats.framesAttempted} notReady=${stats.framesNotReady} sent=${stats.framesSent} results=${stats.resultsReceived} handsSeen=${stats.handsDetectedCount} sendErr=${stats.lastSendError ?? "none"}${poseInfo}`,
+      `video ${video.videoWidth}x${video.videoHeight} readyState=${video.readyState} | attempted=${stats.framesAttempted} notReady=${stats.framesNotReady} sent=${stats.framesSent} results=${stats.resultsReceived} handsSeen=${stats.handsDetectedCount} sendErr=${stats.lastSendError ?? "none"}`,
       0
     );
   }
@@ -257,7 +227,16 @@ function updateWordCapture(now: number) {
       wordBuffer = [];
       report({ type: "HAND_TRACKING_CAPTION", text: "Signing…", confidence: 0 });
     }
-    wordBuffer.push({ leftHand: left, rightHand: right, pose: poseTracker?.getLatest() ?? null });
+    // Pose tracking (real body-position data matching what the word model
+    // was trained on) was tried here and genuinely improved accuracy when
+    // it worked — but running it alongside hand tracking, even sampled at
+    // a reduced rate, wasn't stable in a real call: the offscreen document
+    // kept getting killed under memory/CPU pressure. Reverted to hands-only
+    // (pose: null, same as training's fallback for an unseen pose) until
+    // it can be made to run without taking down the whole session — see
+    // extension/src/lib/mediapipePose.ts, which still has a working,
+    // independently-verified implementation ready to wire back in.
+    wordBuffer.push({ leftHand: left, rightHand: right, pose: null });
   } else if (wordCapturing && now - wordLastHandSeenAt > WORD_HAND_ABSENT_DEBOUNCE_MS) {
     wordCapturing = false;
     void finishWordCapture(now);

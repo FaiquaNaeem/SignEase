@@ -14,6 +14,20 @@ import type { Landmark } from "../types";
  * POSE_KEEP_IDX keeps — left/right shoulder, elbow, wrist, hip (BlazePose
  * topology indices 11,12,13,14,15,16,23,24) — in that exact order, since
  * the backend's normalize_pose_frame assumes index 0/1 are the shoulders.
+ *
+ * NOT currently wired into handTracking.ts's live loop — running this
+ * alongside HandLandmarkTracker on every tick, even sampled at a reduced
+ * rate, wasn't stable in a real video call: the offscreen document kept
+ * getting killed under memory/CPU pressure and silently recreated,
+ * dropping tracking mid-session. This class itself works and was verified
+ * end-to-end against the live backend before that was found. To revisit:
+ * re-fetch the model file (deleted to avoid bloating the built extension
+ * with an unused 5.7MB asset) —
+ *   curl -sL -o extension/public/pose_landmarker.task \
+ *     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+ * — add it back to manifest.config.ts's web_accessible_resources, and
+ * likely needs either a lower capture resolution or moving one of the two
+ * models to a Web Worker before it's safe to run continuously.
  */
 const POSE_KEEP_IDX = [11, 12, 13, 14, 15, 16, 23, 24];
 
