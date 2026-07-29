@@ -26,13 +26,11 @@
       <button id="word-hold" disabled>Hold to sign a word</button>
     </div>
     <p style="font-size: 12px; opacity: 0.7; max-width: 640px;">
-      Recognized words (only these 45 — anything else won't match): hello, bye,
-      please, thankyou, yes, no, water, drink, food, hungry, thirsty, sick,
-      happy, sad, hot, sleepy, open, close, wait, go, look, listen, home,
-      potty, tomorrow, later, now, time, where, why, who, finish, clean,
-      dirty, quiet, loud, fine, bad, mom, dad, sleep, shower, milk, up, down.
-      These come from a baby/family sign-language app's vocabulary, not
-      generic ASL.
+      Recognizes all 250 words in the dataset's vocabulary (up from an
+      earlier 45-word subset) — everyday words, animals, colors, and family
+      terms. These come from a baby/family sign-language app's vocabulary
+      (PopSign), not generic ASL. See backend/checkpoints/word_classifier_report.json
+      for the full class list and per-class accuracy.
     </p>
     <div id="status">Loading…</div>
     <script type="module" src="./test.js"></script>

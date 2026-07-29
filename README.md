@@ -27,23 +27,51 @@ a held-out test split it never saw during training (`backend/checkpoints/*_repor
 | Model | Classes | Train / Val / Test samples | Test accuracy |
 |---|---|---|---|
 | Letter classifier (ResMLP) | 28 (A–Z, minus "nothing") | 11,851 / 2,540 / 2,540 | **98.66%** |
-| Word classifier (Conv1D + Transformer) | 45 curated words | 9,450 / 2,025 / 2,025 | **80.94%** |
+| Word classifier (Conv1D + Transformer) | 250 (full dataset vocabulary) | 66,133 / 14,172 / 14,172 | **71.84%** |
+
+The word model was originally trained on a curated 45-word subset (80.94%
+accuracy) for faster iteration, then retrained on the dataset's entire
+250-word vocabulary once the pipeline was validated end-to-end. The accuracy
+drop (80.94% → 71.84%) is expected and honest — 250 classes is a
+meaningfully harder problem than 45, especially with visually similar signs
+(e.g. "sleep"/"sleepy", "tooth"/"tongue"). Per-class precision/recall is in
+`backend/checkpoints/word_classifier_report.json`.
 
 **Known limitation:** the word model was trained on hand *and* upper-body
 pose landmarks (MediaPipe Holistic), but the extension currently only
 captures hands (MediaPipe HandLandmarker) — there's no pose tracking in the
 browser yet. Feeding zeroed-out pose data at inference costs real accuracy on
-pose-dependent signs. Measured offline: forcing pose to all-zero drops word
-accuracy from 80.94% to ~52%. This is a documented gap, not a silent bug —
-closing it means adding MediaPipe's PoseLandmarker to the client capture
-pipeline, tracked as a follow-up.
+pose-dependent signs (measured offline on the 45-word model: forcing pose to
+all-zero dropped accuracy from 80.94% to ~52%). This is a documented gap, not
+a silent bug — closing it means adding MediaPipe's PoseLandmarker to the
+client capture pipeline, tracked as a follow-up.
 
-Recognized word vocabulary (45 words, not general ASL — sourced from a
-baby/family sign-language subset of the Kaggle `asl-signs` dataset):
-`hello, bye, please, thankyou, yes, no, water, drink, food, hungry, thirsty,
-sick, happy, sad, hot, sleepy, open, close, wait, go, look, listen, home,
-potty, tomorrow, later, now, time, where, why, who, finish, clean, dirty,
-quiet, loud, fine, bad, mom, dad, sleep, shower, milk, up, down`.
+Recognized word vocabulary (250 words, not general ASL — sourced from the
+full Kaggle `asl-signs` dataset, a baby/family sign-language app's
+vocabulary): `TV, after, airplane, all, alligator, animal, another, any,
+apple, arm, aunt, awake, backyard, bad, balloon, bath, because, bed, bedroom,
+bee, before, beside, better, bird, black, blow, blue, boat, book, boy,
+brother, brown, bug, bye, callonphone, can, car, carrot, cat, cereal, chair,
+cheek, child, chin, chocolate, clean, close, closet, cloud, clown, cow,
+cowboy, cry, cut, cute, dad, dance, dirty, dog, doll, donkey, down, drawer,
+drink, drop, dry, dryer, duck, ear, elephant, empty, every, eye, face, fall,
+farm, fast, feet, find, fine, finger, finish, fireman, first, fish, flag,
+flower, food, for, frenchfries, frog, garbage, gift, giraffe, girl, give,
+glasswindow, go, goose, grandma, grandpa, grass, green, gum, hair, happy,
+hat, hate, have, haveto, head, hear, helicopter, hello, hen, hesheit, hide,
+high, home, horse, hot, hungry, icecream, if, into, jacket, jeans, jump,
+kiss, kitty, lamp, later, like, lion, lips, listen, look, loud, mad, make,
+man, many, milk, minemy, mitten, mom, moon, morning, mouse, mouth, nap,
+napkin, night, no, noisy, nose, not, now, nuts, old, on, open, orange,
+outside, owie, owl, pajamas, pen, pencil, penny, person, pig, pizza, please,
+police, pool, potty, pretend, pretty, puppy, puzzle, quiet, radio, rain,
+read, red, refrigerator, ride, room, sad, same, say, scissors, see, shhh,
+shirt, shoe, shower, sick, sleep, sleepy, smile, snack, snow, stairs, stay,
+sticky, store, story, stuck, sun, table, talk, taste, thankyou, that, there,
+think, thirsty, tiger, time, tomorrow, tongue, tooth, toothbrush, touch,
+toy, tree, uncle, underwear, up, vacuum, wait, wake, water, wet, weus,
+where, white, who, why, will, wolf, yellow, yes, yesterday, yourself,
+yucky, zebra, zipper`.
 
 ## Architecture
 
@@ -54,8 +82,9 @@ backend/                       FastAPI service — the only backend, replaces ev
     common.py                  Landmark normalization/feature engineering shared
                                 by both pipelines.
     prepare_letters.py         Kaggle asl-alphabet -> per-frame landmark features.
-    prepare_words.py           Kaggle asl-signs -> landmark sequences (45 curated
-                                words), bulk download from the extracted archive.
+    prepare_words.py           Kaggle asl-signs -> landmark sequences (--all-words
+                                for the full 250-word vocabulary, or a curated
+                                subset), bulk download from the extracted archive.
     train_letters.py           ResMLP training, reports real val/test accuracy.
     train_words.py             Conv1D + TransformerEncoder + masked attention
                                 pooling, same honest-accuracy reporting.
@@ -143,7 +172,7 @@ and accepting the `asl-signs` competition rules on kaggle.com once, then:
 ```bash
 python -m backend.training.prepare_letters
 python -m backend.training.train_letters
-python -m backend.training.prepare_words
+python -m backend.training.prepare_words --all-words
 python -m backend.training.train_words
 python -m backend.training.export_sign_references
 ```
