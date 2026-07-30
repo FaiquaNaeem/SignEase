@@ -157,6 +157,11 @@ def main():
         help="Path to an already-extracted full `kaggle competitions download -c asl-signs` archive "
         "(e.g. backend/data/words_full/raw). Used instead of the flaky per-file download API when present.",
     )
+    parser.add_argument(
+        "--all-words",
+        action="store_true",
+        help="Use every sign in the dataset's vocabulary (250 classes) instead of just CURATED_WORDS.",
+    )
     args = parser.parse_args()
 
     root = args.data_dir / "raw"
@@ -170,10 +175,13 @@ def main():
     train_csv = resolve_file("train.csv", args.local_archive_dir, api, root)
     train_df = pd.read_csv(train_csv)
 
-    available_words = [w for w in CURATED_WORDS if w in set(train_df["sign"])]
-    missing = sorted(set(CURATED_WORDS) - set(available_words))
-    if missing:
-        print(f"Warning: these curated words aren't in the dataset's sign vocabulary: {missing}")
+    if args.all_words:
+        available_words = sorted(set(train_df["sign"]))
+    else:
+        available_words = [w for w in CURATED_WORDS if w in set(train_df["sign"])]
+        missing = sorted(set(CURATED_WORDS) - set(available_words))
+        if missing:
+            print(f"Warning: these curated words aren't in the dataset's sign vocabulary: {missing}")
     print(f"Using {len(available_words)} classes: {available_words}")
 
     # Plain per-word sampling instead of groupby(...).apply(...): the latter

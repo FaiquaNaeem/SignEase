@@ -23,7 +23,6 @@ export function OverlayPanel() {
 
   const sessionRef = useRef<SignToSpeechSession | null>(null);
   const playerRef = useRef(new SignPlaybackPlayer());
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -65,14 +64,9 @@ export function OverlayPanel() {
           onCaption: (text, conf) => {
             setCaption(text);
             setConfidence(conf);
+            setError(null);
           },
           onError: (message) => setError(message),
-          onAudioUrl: (url) => {
-            if (audioRef.current) {
-              audioRef.current.src = url;
-              void audioRef.current.play();
-            }
-          },
         },
         language
       );
@@ -99,8 +93,6 @@ export function OverlayPanel() {
     }
     setRunning(false);
   };
-
-  const toggleWordHold = (holding: boolean) => sessionRef.current?.setWordCapturing(holding);
 
   return (
     <div style={panelStyle}>
@@ -175,14 +167,10 @@ export function OverlayPanel() {
       </button>
 
       {direction === "signToSpeech" && mode === "word" && running && (
-        <button
-          style={{ marginTop: 6, width: "100%" }}
-          onMouseDown={() => toggleWordHold(true)}
-          onMouseUp={() => toggleWordHold(false)}
-          onMouseLeave={() => toggleWordHold(false)}
-        >
-          Hold to sign a word
-        </button>
+        <div style={{ marginTop: 6, fontSize: 10, opacity: 0.7 }}>
+          Sign each word, pausing briefly between them — the sentence is
+          spoken once you stop signing for a couple seconds.
+        </div>
       )}
 
       <div style={{ marginTop: 10, fontSize: 20, fontWeight: 600, minHeight: 28 }}>{caption || "…"}</div>
@@ -211,8 +199,6 @@ export function OverlayPanel() {
           ))}
         </div>
       )}
-
-      <audio ref={audioRef} style={{ display: "none" }} />
     </div>
   );
 }

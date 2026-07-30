@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>SignEase camera + MediaPipe standalone test</title>
+    <style>
+      body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 20px; }
+      #wrap { position: relative; width: 640px; height: 480px; }
+      video, canvas { position: absolute; top: 0; left: 0; width: 640px; height: 480px; }
+      #caption { font-size: 48px; font-weight: 700; margin-top: 12px; min-height: 60px; }
+      #status { margin-top: 8px; font-size: 14px; white-space: pre-wrap; }
+      .ok { color: #4ade80; }
+      .bad { color: #f87171; }
+    </style>
+  </head>
+  <body>
+    <h2>SignEase — standalone camera + MediaPipe test (no extension involved)</h2>
+    <div id="wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+    <div id="caption">…</div>
+    <div>
+      <button id="mode-letter">Spell letters</button>
+      <button id="mode-word">Sign a word</button>
+      <button id="word-hold" disabled>Hold to sign a word</button>
+    </div>
+    <p style="font-size: 12px; opacity: 0.7; max-width: 640px;">
+      Recognizes all 250 words in the dataset's vocabulary (up from an
+      earlier 45-word subset) — everyday words, animals, colors, and family
+      terms. These come from a baby/family sign-language app's vocabulary
+      (PopSign), not generic ASL. See backend/checkpoints/word_classifier_report.json
+      for the full class list and per-class accuracy.
+    </p>
+    <div id="status">Loading…</div>
+    <script type="module" src="./test.js"></script>
+  </body>
+</html>

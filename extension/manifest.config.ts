@@ -20,6 +20,13 @@ export default defineManifest({
     type: "module",
   },
   permissions: ["tabCapture", "offscreen", "storage", "activeTab", "scripting"],
+  // MV3's default extension-page CSP (script-src 'self'; object-src 'self')
+  // doesn't permit WebAssembly compilation at all — 'wasm-unsafe-eval' has
+  // to be added explicitly, or MediaPipe's WebAssembly.instantiate() in the
+  // offscreen document fails with a CSP violation error every time.
+  content_security_policy: {
+    extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+  },
   host_permissions: [
     "https://meet.google.com/*",
     "https://*.zoom.us/*",
@@ -38,7 +45,7 @@ export default defineManifest({
   ],
   web_accessible_resources: [
     {
-      resources: ["mediapipe/*", "sign_references.json"],
+      resources: ["mediapipe-wasm/*", "hand_landmarker.task", "sign_references.json"],
       matches: [
         "https://meet.google.com/*",
         "https://*.zoom.us/*",
